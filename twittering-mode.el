@@ -44,6 +44,7 @@
 (require 'xml)
 (require 'parse-time)
 (require 'mm-url)
+(require 'json)
 
 (defconst twittering-mode-version "0.8")
 (defconst twittering-max-number-of-tweets-on-retrieval 200
@@ -324,7 +325,7 @@ directory. You should change through function'twittering-icon-mode'")
   (twittering-setftime fmt string t))
 
 
-(defvar twittering-debug-mode nil)
+(defvar twittering-debug-mode t)
 (defvar twittering-debug-buffer "*debug*")
 (defun twittering-debug-buffer ()
   (twittering-get-or-generate-buffer twittering-debug-buffer))
@@ -384,6 +385,7 @@ directory. You should change through function'twittering-icon-mode'")
       (define-key km "t" 'twittering-toggle-proxy)
       (define-key km "\C-c\C-p" 'twittering-toggle-proxy)
       (define-key km "q" 'twittering-suspend)
+      (define-key km "\C-c\C-f" 'twittering-search)
       nil))
 
 (defun twittering-keybind-message ()
@@ -481,11 +483,12 @@ directory. You should change through function'twittering-icon-mode'")
 ;;;
 
 (defun twittering-make-http-request (host method method-class
-					  &optional parameters)
+					  &optional parameters format)
+  (if (null format) (setq format  "xml"))
   (let ((nl "\r\n")
 	request)
     (setq request
-	  (concat method " http://" host "/" method-class ".xml"
+	  (concat method " http://" host "/" method-class "." format
 	   (when parameters
 		    (concat "?"
 			    (mapconcat
@@ -537,8 +540,9 @@ directory. You should change through function'twittering-icon-mode'")
     request))
 
 (defun twittering-http-get
-  (host method &optional noninteractive parameters sentinel)
+  (host method &optional noninteractive parameters sentinel format)
   (if (null sentinel) (setq sentinel 'twittering-http-get-default-sentinel))
+  (if (null format) (setq format  "xml"))
 
   (let ((server host)
 	(port "80")
@@ -564,7 +568,7 @@ directory. You should change through function'twittering-icon-mode'")
             (set-process-sentinel proc (lambda (&rest args) (apply sentinel temp-buffer noninteractive args))))
 	  (process-send-string
 	   proc
-	   (twittering-make-http-request host "GET" method parameters)))
+	   (twittering-make-http-request host "GET" method parameters format)))
       (error
        (message (format "Failure: HTTP GET: %s" get-error)) nil))))
 
@@ -893,6 +897,17 @@ XML tree as list. `buffer' may be a buffer or the name of an existing buffer. "
 			  (point-max)))
       ))
 
+(defun twittering-get-response-body-string (buffer)
+  "Exract HTTP response body from HTTP response, , and return a string.
+ `buffer' may be a buffer or the name of an existing buffer. "
+  (if (stringp buffer) (setq buffer (get-buffer buffer)))
+  (save-excursion
+    (set-buffer buffer)
+    (let ((content (buffer-string)))
+      (substring content (+ (string-match "\r?\n\r?\n" content)
+                            (length (match-string 0 content)))
+                 ))))
+
 (defun twittering-cache-status-datum (status-datum &optional data-var)
   "Cache status datum into data-var(default twittering-timeline-data)
 If STATUS-DATUM is already in DATA-VAR, return nil. If not, return t."
@@ -1101,6 +1116,7 @@ If STATUS-DATUM is already in DATA-VAR, return nil. If not, return t."
 		  (letter-entity
 		   (cond ((string= "gt" letter-entity) (list-push ">" result))
 			 ((string= "lt" letter-entity) (list-push "<" result))
+			 ((string= "quot" letter-entity) (list-push "\"" result))
 			 (t (list-push "?" result))))
 		  (t (list-push "?" result)))
 	    (setq cursor (match-end 0))))
@@ -1704,6 +1720,222 @@ return value of (funcall TO the-following-string the-match-data).
   "Suspend twittering-mode then switch to another buffer."
   (interactive)
   (switch-to-buffer (other-buffer)))
+
+;;; Search
+
+(defun twittering-search ()
+  (interactive)
+  (let ((word (read-from-minibuffer "search: ")))
+    (if (> (length word) 0)
+        (twittering-get-search word))))
+
+(defun twittering-get-search (word)
+  (let ((parameters `(("q" . ,word)
+                      ("rpp" . "15"))))
+    (twittering-http-get "search.twitter.com"
+                         (concat "search")
+                         t parameters
+                         'twittering-http-get-search-sentinel
+                         "json")))
+
+(defun twittering-atom-to-status-datum (status)
+  (flet ((assq-get (item seq)
+		   (cdr (assq item seq))))
+    (let* (id text source created-at truncated
+	   in-reply-to-status-id
+	   in-reply-to-screen-name
+	   user-id user-name
+	   user-screen-name
+	   user-location
+	   user-description
+	   user-profile-image-url
+	   user-url
+	   user-protected
+	   regex-index)
+      (message "twittering-atom-to-status-datum. %s" (car status))
+      (setq id (format "%1.0f" (assq-get 'id status)))
+;      (message "[%s][%s][%s]" id (assq-get 'text status) (assq-get 'source status))
+      (setq text (twittering-decode-html-entities
+		  (assq-get 'text status)))
+      (setq source (twittering-decode-html-entities
+		    (assq-get 'source status)))
+      (setq created-at (assq-get 'created_at status))
+      (setq truncated (assq-get 'truncated status))
+;      (setq in-reply-to-status-id
+;	    (twittering-decode-html-entities
+;	     (assq-get 'in_reply_to_status_id status-data)))
+;      (setq in-reply-to-screen-name
+;	    (twittering-decode-html-entities
+;	     (assq-get 'in_reply_to_screen_name status-data)))
+;      (setq user-id (assq-get 'id user-data))
+;      (setq user-name (twittering-decode-html-entities
+;		       (assq-get 'from_user status)))
+      (setq user-screen-name (twittering-decode-html-entities
+			      (assq-get 'from_user status)))
+;      (setq user-location (twittering-decode-html-entities
+;			   (assq-get 'location user-data)))
+;      (setq user-description (twittering-decode-html-entities
+;			      (assq-get 'description user-data)))
+      (setq user-profile-image-url (assq-get 'profile_image_url status))
+;      (setq user-url (assq-get 'url user-data))
+;      (setq user-protected (assq-get 'protected user-data))
+
+      (message "[%s]:[%s]:[%s][%s][%s]" id text source created-at (assq-get 'source status))
+
+      ;; make username clickable
+      (add-text-properties
+       0 (length user-name)
+       `(mouse-face highlight
+		    uri ,(concat "http://twitter.com/" user-screen-name)
+		    face twittering-username-face)
+       user-name)
+
+      ;; make screen-name clickable
+      (add-text-properties
+       0 (length user-screen-name)
+       `(mouse-face highlight
+ 		    uri ,(concat "http://twitter.com/" user-screen-name)
+ 		    face twittering-username-face)
+        user-screen-name)
+      
+      ;; make screen-name in text clickable
+      (let ((pos 0))
+ 	(block nil
+ 	  (while (string-match "@\\([_a-zA-Z0-9]+\\)" text pos)
+ 	    (let ((next-pos (match-end 0))
+ 		  (screen-name (match-string 1 text)))
+ 	      (when (eq next-pos pos)
+ 		(return nil))
+              
+ 	      (add-text-properties
+ 	       (match-beginning 1) (match-end 1)
+ 	       `(screen-name-in-text ,screen-name) text)
+	      
+ 	      (setq pos next-pos)))))
+
+      ;; make URI clickable
+      (setq regex-index 0)
+      (while regex-index
+	(setq regex-index
+	      (string-match "@\\([_a-zA-Z0-9]+\\)\\|\\(https?://[-_.!~*'()a-zA-Z0-9;/?:@&=+$,%#]+\\)"
+			    text
+			    regex-index))
+	(when regex-index
+	  (let* ((matched-string (match-string-no-properties 0 text))
+		 (screen-name (match-string-no-properties 1 text))
+		 (uri (match-string-no-properties 2 text)))
+	    (add-text-properties
+	     (if screen-name
+		 (+ 1 (match-beginning 0))
+	       (match-beginning 0))
+	     (match-end 0)
+	     (if screen-name
+		 `(mouse-face
+		   highlight
+		   face twittering-uri-face
+		   uri-in-text ,(concat "http://twitter.com/" screen-name))
+	       `(mouse-face highlight
+			    face twittering-uri-face
+			    uri-in-text ,uri))
+	     text))
+	  (setq regex-index (match-end 0)) ))
+
+
+      ;; make source pretty and clickable
+      (if (string-match "<a href=\"\\(.*?\\)\".*?>\\(.*\\)</a>" source)
+	  (let ((uri (match-string-no-properties 1 source))
+		(caption (match-string-no-properties 2 source)))
+	    (setq source caption)
+	    (add-text-properties
+	     0 (length source)
+	     `(mouse-face highlight
+			  uri ,uri
+			  face twittering-uri-face
+			  source ,source)
+	     source)
+	    ))
+
+      ;; save last update time
+      (when (or (null twittering-timeline-last-update)
+                (< (twittering-created-at-to-seconds
+                    twittering-timeline-last-update)
+                   (twittering-created-at-to-seconds created-at)))
+        (setq twittering-timeline-last-update created-at))
+
+      (mapcar
+       (lambda (sym)
+	 `(,sym . ,(symbol-value sym)))
+       '(id text source created-at truncated
+	    in-reply-to-status-id
+	    in-reply-to-screen-name
+	    user-id user-name user-screen-name user-location
+	    user-description
+	    user-profile-image-url
+	    user-url
+	    user-protected)))))
+
+(defun twittering-atom-to-status (xmltree)
+  (message "twittering-atom-to-status.")
+  (mapcar #'twittering-atom-to-status-datum
+	  ;; quirk to treat difference between xml.el in Emacs21 and Emacs22
+	  ;; On Emacs22, there may be blank strings
+	  (let* ((ret nil)
+                 (statuses (cdr (assq 'results (cdr xmltree))))
+                 (n (- (length statuses) 1)))
+	    (while (>= n 0)
+              (message "%s" n)
+              (setq ret (cons (elt statuses n) ret))
+;	      (if (consp (car statuses))
+;		  (setq ret (cons (car statuses) ret)))
+	      (setq n (- n 1)))
+	    ret)))
+
+(defun twittering-http-get-search-sentinel
+  (temp-buffer noninteractive proc stat &optional suc-msg)
+
+  (unwind-protect
+      (let ((header (twittering-get-response-header temp-buffer))
+	    (body (twittering-get-response-body-string temp-buffer))
+	    (status nil)
+	    (statuses nil)
+	    )
+	(if (string-match "HTTP/1\.[01] \\([a-zA-Z0-9 ]+\\)\r?\n" header)
+	    (progn
+	      (setq status (match-string-no-properties 1 header))
+	      (case-string
+	       status
+	       (("200 OK")
+                (setq statuses (twittering-atom-to-status
+                                (json-read-from-string body)))
+                (message "status:%s" statuses)
+		(setq twittering-new-tweets-count (length statuses))
+		(setq twittering-new-tweets-count
+		      (count t (mapcar
+				#'twittering-cache-status-datum
+				(reverse statuses))))
+                
+                (message "twittering-new-tweets-count:%s" twittering-new-tweets-count)
+                (setq twittering-timeline-data twittering-timeline-data)
+;; 		(setq twittering-timeline-data
+;; 		      (sort twittering-timeline-data
+;; 			    (lambda (status1 status2)
+;; 			      (let ((created-at1
+;; 				     (twittering-created-at-to-seconds
+;; 				      (cdr (assoc 'created-at status1))))
+;; 				    (created-at2
+;; 				     (twittering-created-at-to-seconds
+;; 				      (cdr (assoc 'created-at status2)))))
+;; 				(> created-at1 created-at2)))))
+;; 		(if (and (> twittering-new-tweets-count 0)
+;; 			 noninteractive)
+;; 		    (run-hooks 'twittering-new-tweets-hook))
+		(twittering-render-timeline)
+		(when twittering-notify-successful-http-get
+		  (message (if suc-msg suc-msg "Success: Get."))))
+	       (t (message status))))
+	  (message "Failure: Bad http response.")))
+    (kill-buffer temp-buffer)
+    ))
 
 ;;;###autoload
 (defun twit ()
