@@ -45,6 +45,7 @@
 (require 'parse-time)
 (require 'mm-url)
 (require 'json)
+(require 'ffap)
 
 (defconst twittering-mode-version "0.8")
 (defconst twittering-max-number-of-tweets-on-retrieval 200
@@ -665,6 +666,10 @@ directory. You should change through function'twittering-icon-mode'")
       (goto-char (+ point (if twittering-scroll-mode (- (point-max) end) 0))))
     ))
 
+(defun twittering-icon-path (icon-url)
+  (concat (md5 icon-url nil nil 'iso-2022-7bit)
+	  (or (ffap-file-suffix icon-url) ".img")))
+
 (defun twittering-format-status (status format-str)
   ;; Formatting strategy:
   ;; 
@@ -687,7 +692,7 @@ directory. You should change through function'twittering-icon-mode'")
 	    (if (string-match "/\\([^/?]+\\)\\(?:\\?\\|$\\)" profile-image-url)
 		(let* ((filename (match-string-no-properties 1
 							     profile-image-url))
-		       (fullpath (concat twittering-tmp-dir "/" filename)))
+		       (fullpath (concat twittering-tmp-dir "/" (twittering-icon-path profile-image-url))))
 		  ;; download icons if does not exist
 		  (if (file-exists-p fullpath)
 		      t
@@ -1151,35 +1156,37 @@ If STATUS-DATUM is already in DATA-VAR, return nil. If not, return t."
       (funcall func)
       )))
 
-(defun twittering-update-status-if-not-blank (status &optional reply-to-id)
-  (if (string-match "^\\s-*\\(?:@[-_a-z0-9]+\\)?\\s-*$" status)
-      nil
-    (setq status (concat status (twittering-sign-string)))
-    (let ((parameters `(("status" . ,status)
-			("source" . "twmode")
-			,@(if reply-to-id
-			      `(("in_reply_to_status_id"
-				 . ,reply-to-id))))))
-      (twittering-http-post "twitter.com" "statuses/update" parameters))
-    t))
-
+(defun twittering-status-not-blank-p (status)
+  (not (string-match
+	"^\\s-*\\(?:@[-_a-z0-9]+\\(\s+@[-_a-z0-9]+\\)*\\)?\\s-*$" status)))
+ 
 (defun twittering-update-status-from-minibuffer (&optional init-str
 							   reply-to-id)
   (when (and (null init-str)
 	     twittering-current-hashtag)
     (setq init-str (format " #%s " twittering-current-hashtag)))
-  (let ((status init-str) (not-posted-p t) (map minibuffer-local-map))
+  (let ((status init-str)
+	(sign-str (twittering-sign-string))
+	(not-posted-p t)
+	(map minibuffer-local-map))
+    (define-key map (kbd "<f4>") 'twittering-tinyurl-replace-at-point)
     (while not-posted-p
-      (define-key map (kbd "<f4>") 'twittering-tinyurl-replace-at-point)
       (setq status (read-from-minibuffer "status: " status map nil 'twittering-tweet-history nil t))
-      (while (< 140 (length status))
+      (while (< 140 (length (concat status sign-str)))
 	(setq status (read-from-minibuffer (format "(%d): "
-						   (- 140 (length status)))
+						   (- 140 (length (concat status sign-str))))
 					   status map nil 'twittering-tweet-history nil t)))
-      (setq not-posted-p
-	    (not (twittering-update-status-if-not-blank status reply-to-id)))
-      )
-    ))
+
+      (when (twittering-status-not-blank-p status)
+	(let* ((status-with-sign (concat status sign-str))
+	       (parameters `(("status" . ,status-with-sign)
+			     ("source" . "twmode")
+			     ,@(if reply-to-id
+				   `(("in_reply_to_status_id"
+				      . ,reply-to-id))))))
+	  (twittering-http-post "twitter.com" "statuses/update" parameters)
+	  (setq not-posted-p nil)))
+      )))
 
 (defun twittering-get-timeline (method &optional noninteractive id)
   (twittering-get-twits "twitter.com"
@@ -1290,23 +1297,26 @@ If STATUS-DATUM is already in DATA-VAR, return nil. If not, return t."
 
   (if (and twittering-icon-mode window-system)
       (if twittering-image-stack
-	  (let ((proc
-		 (apply
-		  #'start-process
-		  "wget-images"
-		  (twittering-wget-buffer)
-		  "wget"
-		  (format "--directory-prefix=%s" twittering-tmp-dir)
-		  "--no-clobber"
-		  "--quiet"
-		  twittering-image-stack)))
-	    (set-process-sentinel
-	     proc
-	     (lambda (proc stat)
-	       (clear-image-cache)
-	       (save-excursion
-		 (set-buffer (twittering-wget-buffer))
-		 )))))))
+	  (dolist (url twittering-image-stack)
+	    (let ((file (concat twittering-tmp-dir "/" (twittering-icon-path url))))
+	    (unless (file-exists-p file)
+	      (let ((proc
+		     (funcall
+		      #'start-process
+		      "wget-images"
+		      (twittering-wget-buffer)
+		      "wget"
+		      "--quiet"
+		      (format "--directory-prefix=%s" twittering-tmp-dir)
+		      "-O" file
+		      url)))
+		(set-process-sentinel
+		 proc
+		 (lambda (proc stat)
+		   (clear-image-cache)
+		   (save-excursion
+		     (set-buffer (twittering-wget-buffer))
+		     ))))))))))
 
 (defun twittering-friends-timeline ()
   (interactive)
