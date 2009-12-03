@@ -385,7 +385,7 @@ directory. You should change through function'twittering-icon-mode'")
       (define-key km "t" 'twittering-toggle-proxy)
       (define-key km "\C-c\C-p" 'twittering-toggle-proxy)
       (define-key km "q" 'twittering-suspend)
-      (define-key km "\C-c\C-f" 'twittering-search)
+      (define-key km "\C-c\C-q" 'twittering-search)
       nil))
 
 (defun twittering-keybind-message ()
@@ -1043,6 +1043,26 @@ If STATUS-DATUM is already in DATA-VAR, return nil. If not, return t."
 			  source ,source)
 	     source)
 	    ))
+
+      ;; make hashtag in text clickable
+      (let ((pos 0))
+	(block nil
+	  (while (string-match "\\(#[_a-zA-Z0-9]+\\)" text pos)
+	    (let ((next-pos (match-end 0))
+		  (hashtag (match-string 1 text)))
+	      (when (eq next-pos pos)
+		(return nil))
+	      
+	      (add-text-properties
+	       (match-beginning 1) (match-end 1)
+               `(mouse-face highlight
+                            uri-in-text
+                            ,(concat "http://twitter.com/search?q="
+                                     (twittering-percent-encode hashtag))
+                            face twittering-username-face)
+               text)
+	      
+	      (setq pos next-pos)))))
 
       ;; save last update time
       (when (or (null twittering-timeline-last-update)
