@@ -976,99 +976,6 @@ If STATUS-DATUM is already in DATA-VAR, return nil. If not, return t."
       (setq user-url (assq-get 'url user-data))
       (setq user-protected (assq-get 'protected user-data))
 
-      ;; make username clickable
-      (add-text-properties
-       0 (length user-name)
-       `(mouse-face highlight
-		    uri ,(concat "http://twitter.com/" user-screen-name)
-		    face twittering-username-face)
-       user-name)
-
-      ;; make screen-name clickable
-      (add-text-properties
-       0 (length user-screen-name)
-       `(mouse-face highlight
-		    uri ,(concat "http://twitter.com/" user-screen-name)
-		    face twittering-username-face)
-       user-screen-name)
-
-      ;; make screen-name in text clickable
-      (let ((pos 0))
-	(block nil
-	  (while (string-match "@\\([_a-zA-Z0-9]+\\)" text pos)
-	    (let ((next-pos (match-end 0))
-		  (screen-name (match-string 1 text)))
-	      (when (eq next-pos pos)
-		(return nil))
-	      
-	      (add-text-properties
-	       (match-beginning 1) (match-end 1)
-	       `(screen-name-in-text ,screen-name) text)
-	      
-	      (setq pos next-pos)))))
-
-      ;; make URI clickable
-      (setq regex-index 0)
-      (while regex-index
-	(setq regex-index
-	      (string-match "@\\([_a-zA-Z0-9]+\\)\\|\\(https?://[-_.!~*'()a-zA-Z0-9;/?:@&=+$,%#]+\\)"
-			    text
-			    regex-index))
-	(when regex-index
-	  (let* ((matched-string (match-string-no-properties 0 text))
-		 (screen-name (match-string-no-properties 1 text))
-		 (uri (match-string-no-properties 2 text)))
-	    (add-text-properties
-	     (if screen-name
-		 (+ 1 (match-beginning 0))
-	       (match-beginning 0))
-	     (match-end 0)
-	     (if screen-name
-		 `(mouse-face
-		   highlight
-		   face twittering-uri-face
-		   uri-in-text ,(concat "http://twitter.com/" screen-name))
-	       `(mouse-face highlight
-			    face twittering-uri-face
-			    uri-in-text ,uri))
-	     text))
-	  (setq regex-index (match-end 0)) ))
-
-
-      ;; make source pretty and clickable
-      (if (string-match "<a href=\"\\(.*?\\)\".*?>\\(.*\\)</a>" source)
-	  (let ((uri (match-string-no-properties 1 source))
-		(caption (match-string-no-properties 2 source)))
-	    (setq source caption)
-	    (add-text-properties
-	     0 (length source)
-	     `(mouse-face highlight
-			  uri ,uri
-			  face twittering-uri-face
-			  source ,source)
-	     source)
-	    ))
-
-      ;; make hashtag in text clickable
-      (let ((pos 0))
-	(block nil
-	  (while (string-match "\\(#[_a-zA-Z0-9]+\\)" text pos)
-	    (let ((next-pos (match-end 0))
-		  (hashtag (match-string 1 text)))
-	      (when (eq next-pos pos)
-		(return nil))
-	      
-	      (add-text-properties
-	       (match-beginning 1) (match-end 1)
-               `(mouse-face highlight
-                            uri-in-text
-                            ,(concat "http://twitter.com/search?q="
-                                     (twittering-percent-encode hashtag))
-                            face twittering-username-face)
-               text)
-	      
-	      (setq pos next-pos)))))
-
       ;; save last update time
       (when (or (null twittering-timeline-last-update)
                 (< (twittering-created-at-to-seconds
@@ -1076,17 +983,134 @@ If STATUS-DATUM is already in DATA-VAR, return nil. If not, return t."
                    (twittering-created-at-to-seconds created-at)))
         (setq twittering-timeline-last-update created-at))
 
-      (mapcar
-       (lambda (sym)
-	 `(,sym . ,(symbol-value sym)))
-       '(id text source created-at truncated
-	    in-reply-to-status-id
-	    in-reply-to-screen-name
-	    user-id user-name user-screen-name user-location
-	    user-description
-	    user-profile-image-url
-	    user-url
-	    user-protected)))))
+      (twittering-make-clickable-status-datum
+       (mapcar (lambda (sym)
+                 `(,sym . ,(symbol-value sym)))
+               '(id text source created-at truncated
+                    in-reply-to-status-id
+                    in-reply-to-screen-name
+                    user-id user-name user-screen-name user-location
+                    user-description
+                    user-profile-image-url
+                    user-url
+                    user-protected))))))
+
+(defun twittering-make-clickable-status-datum (status)
+  (flet ((assq-get (item seq)
+		   (cdr (assq item seq))))
+    (let ((user-name (assq-get 'user-name status))
+          (id (assq-get 'id status))
+          (text (assq-get 'text status))
+          (source (assq-get 'source status))
+          (created-at (assq-get 'created-at status))
+          (truncated (assq-get 'truncated status))
+          (in-reply-to-status-id (assq-get 'in-reply-to-status-id status))
+          (in-reply-to-screen-name (assq-get 'in-reply-to-screen-name status))
+          (user-id (assq-get 'user-id status))
+          (user-name (assq-get 'user-name status))
+          (user-screen-name (assq-get 'user-screen-name status))
+          (user-location (assq-get 'user-location status))
+          (user-description (assq-get 'user-description status))
+          (user-profile-image-url (assq-get 'user-profile-image-url status))
+          (user-url (assq-get 'user-url status))
+          (user-protected (assq-get 'user-protected status)))
+      
+      (message user-name)
+      ;; make username clickable
+      (add-text-properties
+       0 (length user-name)
+       `(mouse-face highlight
+                    uri ,(concat "http://twitter.com/" user-screen-name)
+                    face twittering-username-face)
+       user-name)
+    
+      ;; make screen-name clickable
+      (add-text-properties
+       0 (length user-screen-name)
+       `(mouse-face highlight
+                    uri ,(concat "http://twitter.com/" user-screen-name)
+                    face twittering-username-face)
+       user-screen-name)
+    
+      ;; make screen-name in text clickable
+      (let ((pos 0))
+        (block nil
+          (while (string-match "@\\([_a-zA-Z0-9]+\\)" text pos)
+            (let ((next-pos (match-end 0))
+                  (screen-name (match-string 1 text)))
+              (when (eq next-pos pos)
+                (return nil))
+            
+              (add-text-properties
+               (match-beginning 1) (match-end 1)
+               `(screen-name-in-text ,screen-name) text)
+            
+              (setq pos next-pos)))))
+
+      ;; make URI clickable
+      (setq regex-index 0)
+      (while regex-index
+        (setq regex-index
+              (string-match "@\\([_a-zA-Z0-9]+\\)\\|\\(https?://[-_.!~*'()a-zA-Z0-9;/?:@&=+$,%#]+\\)"
+                            text
+                            regex-index))
+        (when regex-index
+          (let* ((matched-string (match-string-no-properties 0 text))
+                 (screen-name (match-string-no-properties 1 text))
+                 (uri (match-string-no-properties 2 text)))
+            (add-text-properties
+             (if screen-name
+                 (+ 1 (match-beginning 0))
+               (match-beginning 0))
+             (match-end 0)
+             (if screen-name
+                 `(mouse-face
+                   highlight
+                   face twittering-uri-face
+                   uri-in-text ,(concat "http://twitter.com/" screen-name))
+               `(mouse-face highlight
+                            face twittering-uri-face
+                            uri-in-text ,uri))
+             text))
+          (setq regex-index (match-end 0)) ))
+
+
+      ;; make source pretty and clickable
+      (if (string-match "<a href=\"\\(.*?\\)\".*?>\\(.*\\)</a>" source)
+          (let ((uri (match-string-no-properties 1 source))
+                (caption (match-string-no-properties 2 source)))
+            (setq source caption)
+            (add-text-properties
+             0 (length source)
+             `(mouse-face highlight
+                          uri ,uri
+                          face twittering-uri-face
+                          source ,source)
+             source)
+            (add-to-list 'status (cons 'source  source))
+            ))
+
+      ;; make hashtag in text clickable
+      (let ((pos 0))
+        (block nil
+          (while (string-match "\\(#[_a-zA-Z0-9]+\\)" text pos)
+            (let ((next-pos (match-end 0))
+                  (hashtag (match-string 1 text)))
+              (when (eq next-pos pos)
+                (return nil))
+	      
+              (add-text-properties
+               (match-beginning 1) (match-end 1)
+               `(mouse-face highlight
+                            uri-in-text
+                            ,(concat "http://twitter.com/search?q="
+                                     (twittering-percent-encode hashtag))
+                            face twittering-username-face)
+               text)
+	      
+              (setq pos next-pos)))))
+    
+      status)))
 
 (defun twittering-xmltree-to-status (xmltree)
   (mapcar #'twittering-status-to-status-datum
@@ -1812,79 +1836,6 @@ return value of (funcall TO the-following-string the-match-data).
 
       (message "[%s]:[%s]:[%s][%s][%s]" id text source created-at (assq-get 'source status))
 
-      ;; make username clickable
-      (add-text-properties
-       0 (length user-name)
-       `(mouse-face highlight
-		    uri ,(concat "http://twitter.com/" user-screen-name)
-		    face twittering-username-face)
-       user-name)
-
-      ;; make screen-name clickable
-      (add-text-properties
-       0 (length user-screen-name)
-       `(mouse-face highlight
- 		    uri ,(concat "http://twitter.com/" user-screen-name)
- 		    face twittering-username-face)
-        user-screen-name)
-      
-      ;; make screen-name in text clickable
-      (let ((pos 0))
- 	(block nil
- 	  (while (string-match "@\\([_a-zA-Z0-9]+\\)" text pos)
- 	    (let ((next-pos (match-end 0))
- 		  (screen-name (match-string 1 text)))
- 	      (when (eq next-pos pos)
- 		(return nil))
-              
- 	      (add-text-properties
- 	       (match-beginning 1) (match-end 1)
- 	       `(screen-name-in-text ,screen-name) text)
-	      
- 	      (setq pos next-pos)))))
-
-      ;; make URI clickable
-      (setq regex-index 0)
-      (while regex-index
-	(setq regex-index
-	      (string-match "@\\([_a-zA-Z0-9]+\\)\\|\\(https?://[-_.!~*'()a-zA-Z0-9;/?:@&=+$,%#]+\\)"
-			    text
-			    regex-index))
-	(when regex-index
-	  (let* ((matched-string (match-string-no-properties 0 text))
-		 (screen-name (match-string-no-properties 1 text))
-		 (uri (match-string-no-properties 2 text)))
-	    (add-text-properties
-	     (if screen-name
-		 (+ 1 (match-beginning 0))
-	       (match-beginning 0))
-	     (match-end 0)
-	     (if screen-name
-		 `(mouse-face
-		   highlight
-		   face twittering-uri-face
-		   uri-in-text ,(concat "http://twitter.com/" screen-name))
-	       `(mouse-face highlight
-			    face twittering-uri-face
-			    uri-in-text ,uri))
-	     text))
-	  (setq regex-index (match-end 0)) ))
-
-
-      ;; make source pretty and clickable
-      (if (string-match "<a href=\"\\(.*?\\)\".*?>\\(.*\\)</a>" source)
-	  (let ((uri (match-string-no-properties 1 source))
-		(caption (match-string-no-properties 2 source)))
-	    (setq source caption)
-	    (add-text-properties
-	     0 (length source)
-	     `(mouse-face highlight
-			  uri ,uri
-			  face twittering-uri-face
-			  source ,source)
-	     source)
-	    ))
-
       ;; save last update time
       (when (or (null twittering-timeline-last-update)
                 (< (twittering-created-at-to-seconds
@@ -1892,17 +1843,18 @@ return value of (funcall TO the-following-string the-match-data).
                    (twittering-created-at-to-seconds created-at)))
         (setq twittering-timeline-last-update created-at))
 
-      (mapcar
-       (lambda (sym)
-	 `(,sym . ,(symbol-value sym)))
-       '(id text source created-at truncated
-	    in-reply-to-status-id
-	    in-reply-to-screen-name
-	    user-id user-name user-screen-name user-location
-	    user-description
-	    user-profile-image-url
-	    user-url
-	    user-protected)))))
+      (twittering-make-clickable-status-datum
+       (mapcar
+        (lambda (sym)
+          `(,sym . ,(symbol-value sym)))
+        '(id text source created-at truncated
+             in-reply-to-status-id
+             in-reply-to-screen-name
+             user-id user-name user-screen-name user-location
+             user-description
+             user-profile-image-url
+             user-url
+             user-protected))))))
 
 (defun twittering-atom-to-status (xmltree)
   (message "twittering-atom-to-status.")
