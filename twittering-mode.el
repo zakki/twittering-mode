@@ -355,7 +355,7 @@ Otherwise, they are retrieved by `url-retrieve'.")
   (twittering-setftime fmt string t))
 
 
-(defvar twittering-debug-mode t)
+(defvar twittering-debug-mode nil)
 (defvar twittering-debug-buffer "*debug*")
 (defun twittering-debug-buffer ()
   (twittering-get-or-generate-buffer twittering-debug-buffer))
@@ -1069,7 +1069,6 @@ If STATUS-DATUM is already in DATA-VAR, return nil. If not, return t."
           (user-url (assq-get 'user-url status))
           (user-protected (assq-get 'user-protected status)))
       
-      (message user-name)
       ;; make username clickable
       (add-text-properties
        0 (length user-name)
@@ -1937,6 +1936,7 @@ return value of (funcall TO the-following-string the-match-data).
 ;      (setq user-description (twittering-decode-html-entities
 ;			      (assq-get 'description user-data)))
       (setq user-profile-image-url (assq-get 'profile_image_url status))
+;      (message "%s" user-profile-image-url)
 ;      (setq user-url (assq-get 'url user-data))
 ;      (setq user-protected (assq-get 'protected user-data))
 
