@@ -1,3 +1,23 @@
+2009-12-07  Naohiro Aota  <naota@elisp.net>
+
+	* twittering-mode.el (twittering-http-get-default-sentinel): Check
+	if buffer live-p before killing it.
+
+2009-12-07  Yuto Hayamizu  <y.hayamizu@gmail.com>
+
+	* twittering-mode.el (twittering-read-username-with-completion):
+	rename from `twittering-get-username-with-completion'
+	(twittering-make-list-from-assoc): simplified
+	(twittering-other-user-timeline-interactive): changed init string
+	to nil
+
+2009-12-06  NAKAYA Toshiharu  <toshiharu.nakaya@gmail.com>
+
+	* twittering-mode.el (twittering-retrieve-image-without-wget): set
+	require-final-newline is nil locally since emacs can not save icon
+	images because of "error in process filter: save-buffer: Text is
+	read-only".
+
 2009-12-06  Tadashi MATSUO  <matsuo@i.ci.ritsumei.ac.jp>
 
 	* twittering-mode.el (twittering-use-wget): new variable for
@@ -12,6 +32,16 @@
 	generating properties for icon with/without cropping the image.
 	(twittering-retrieve-image-without-wget): write an image as binary
 	explicitly.
+
+2009-12-05  Satoshi Yatagawa  <yata_github@y.hauN.org>
+
+	* twittering-mode.el (twittering-get-username-with-completion):
+	New defun as a wrapper function for read-from-minibuffer.
+	(twittering-follow): Call it instead of read-from-minibuffer.
+	(twittering-other-user-timeline-interactive): Likewise.
+	(twittering-other-user-list-interactive): Likewise.
+
+	* twittering-mode.el (twittering-make-list-from-assoc): New defun.
 
 2009-12-04  Yuto Hayamizu  <y.hayamizu@gmail.com>
 

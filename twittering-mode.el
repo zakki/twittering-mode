@@ -673,7 +673,8 @@ Otherwise, they are retrieved by `url-retrieve'.")
 		  (message (if suc-msg suc-msg "Success: Get."))))
 	       (t (message status))))
 	  (message "Failure: Bad http response.")))
-    (kill-buffer temp-buffer))
+    (when (buffer-live-p temp-buffer)
+      (kill-buffer temp-buffer)))
   )
 
 (defun twittering-render-timeline ()
@@ -1408,7 +1409,8 @@ If STATUS-DATUM is already in DATA-VAR, return nil. If not, return t."
       (unless (file-exists-p file)
 	(url-retrieve
 	 url `(lambda (status)
-		(let ((coding-system-for-write 'binary))
+		(let ((coding-system-for-write 'binary)
+		      (require-final-newline nil))
 		  (goto-char (point-min))
 		  (search-forward-regexp "^$")
 		  (goto-char (1+ (point)))
@@ -1649,7 +1651,8 @@ return value of (funcall TO the-following-string the-match-data).
 	(method (if remove "destroy" "create"))
 	(mes (if remove "unfollowing" "following")))
     (unless username
-      (setq username (read-from-minibuffer "who: ")))
+      (setq username (twittering-read-username-with-completion
+		      "who: " "" 'twittering-user-history)))
     (if (> (length username) 0)
 	(when (y-or-n-p (format "%s %s? " mes username))
 	  (twittering-manage-friendships method username))
@@ -1695,18 +1698,19 @@ return value of (funcall TO the-following-string the-match-data).
 (defun twittering-other-user-timeline-interactive ()
   (interactive)
   (let ((username
-	 (read-from-minibuffer
-	  "user: "
-	  (or (get-text-property (point) 'screen-name-in-text)
-	      (get-text-property (point) 'username))
-	  nil nil 'twittering-user-history)))
+	 (twittering-read-username-with-completion
+	  "user: " nil
+	  'twittering-user-history)))
     (if (> (length username) 0)
 	(twittering-get-timeline (concat "user_timeline/" username))
       (message "No user selected"))))
 
 (defun twittering-other-user-list-interactive ()
   (interactive)
-  (let ((username (read-from-minibuffer "whose list: " (get-text-property (point) 'username))))
+  (let ((username (twittering-read-username-with-completion
+		   "whose list: "
+		   (get-text-property (point) 'username)
+		   'twittering-user-history)))
     (if (> (length username) 0)
 	(progn
 	  (setq twittering-list-index-retrieved nil)
@@ -1738,6 +1742,19 @@ return value of (funcall TO the-following-string the-match-data).
   (let ((username (get-text-property (point) 'username)))
     (if username
 	(twittering-update-status-from-minibuffer (concat "@" username " ")))))
+
+(defun twittering-make-list-from-assoc (key data)
+  (mapcar (lambda (status)
+	    (cdr (assoc key status)))
+	  data))
+
+(defun twittering-read-username-with-completion (prompt init-user
+							&optional history)
+  (completing-read prompt
+		   (append (twittering-make-list-from-assoc
+			    'user-screen-name twittering-timeline-data)
+			   twittering-user-history)
+		   nil nil init-user history))
 
 (defun twittering-get-username ()
   (or twittering-username-active
