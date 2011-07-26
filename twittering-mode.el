@@ -3443,7 +3443,9 @@ Return cons of the spec and the rest string."
     `((home) . ,(substring str (match-end 0))))
    ((string-match (concat "^" twittering-regexp-atmark) str)
     `((replies) . ,(substring str (match-end 0))))
-   ((string-match (concat "^" twittering-regexp-hash "\\([a-zA-Z0-9_-]+\\)")
+   ((string-match (if twittering-non-latin-hashtag
+		      (concat "^" twittering-auto-link-hashtags)
+		    (concat "^" twittering-regexp-hash "\\([a-zA-Z0-9_-]+\\)"))
 		  str)
     (let* ((tag (match-string 1 str))
 	   (rest (substring str (match-end 0))))
@@ -5609,6 +5611,122 @@ static char * unplugged_xpm[] = {
   "Update mode line."
   (force-mode-line-update))
 
+
+;;;;
+;;;; Hashtag
+;;;; port of https://github.com/twitter/twitter-text-js
+;;;;
+
+(defun twittering-ucs-seq-to-string (sequence separator)
+  "Return a string specified by SEQUENCE in Unicode."
+  (mapconcat
+   'char-to-string
+   (mapcar 'twittering-ucs-to-char sequence)
+   separator))
+
+(defvar twittering-non-latin-hashtag t
+  "*Use non latin hashtag.")
+
+(defvar twittering-space-chars
+  (twittering-ucs-seq-to-string
+   (append
+    '(
+      #x0020 ; White_Space # Zs       SPACE
+      #x0085 ; White_Space # Cc       <control-0085>
+      #x00A0 ; White_Space # Zs       NO-BREAK SPACE
+      #x1680 ; White_Space # Zs       OGHAM SPACE MARK
+      #x180E ; White_Space # Zs       MONGOLIAN VOWEL SEPARATOR
+      #x2028 ; White_Space # Zl       LINE SEPARATOR
+      #x2029 ; White_Space # Zp       PARAGRAPH SEPARATOR
+      #x202F ; White_Space # Zs       NARROW NO-BREAK SPACE
+      #x205F ; White_Space # Zs       MEDIUM MATHEMATICAL SPACE
+      #x3000 ; White_Space # Zs       IDEOGRAPHIC SPACE
+      )
+    (number-sequence #x009 #x00D) ; White_Space # Cc   [5] <control-0009>..<control-000D>
+    (number-sequence #x2000 #x200A) ; White_Space # Zs  [11] EN QUAD..HAIR SPACE
+    ) ""))
+
+(defvar twittering-spaces (concat "[" twittering-space-chars "]+"))
+
+(defvar twittering-non-latin-hashtag-chars
+  (apply 'concat
+	 (mapcar (function (lambda (x)
+			     (mapconcat 'char-to-string
+					(mapcar 'twittering-ucs-to-char x) "-")))
+		 '(
+		   ;; Cyrillic
+		   (#x0400 #x04ff); Cyrillic
+		   (#x0500 #x0527); Cyrillic Supplement
+		   ;; Hangul (Korean)
+		   (#x1100 #x11ff); Hangul Jamo
+		   (#x3130 #x3185); Hangul Compatibility Jamo
+		   (#xA960 #xA97F); Hangul Jamo Extended-A
+		   (#xAC00 #xD7AF); Hangul Syllables
+		   (#xD7B0 #xD7FF); Hangul Jamo Extended-B
+		   ;; Japanese and Chinese
+		   (#x30A1 #x30FA); Katakana (full-width)
+		   (#x30FC #x30FC); Katakana Chouon (full-width)
+		   (#xFF66 #xFF9F); Katakana (half-width)
+		   (#xFF70 #xFF70); Katakana Chouon (half-width)
+		   (#xFF10 #xFF19); \
+		   (#xFF21 #xFF3A);  - Latin (full-width)
+		   (#xFF41 #xFF5A); /
+		   (#x3041 #x3096); Hiragana
+		   (#x3400 #x4DBF); Kanji (CJK Extension A)
+		   (#x4E00 #x9FFF); Kanji (Unified)
+		   ;; ; -- Disabled as it breaks the Regex.
+		   ;; ;'(#x20000, #x2A6DF); Kanji (CJK Extension B)
+		   (#x2A700 #x2B73F); Kanji (CJK Extension C)
+		   (#x2B740 #x2B81F); Kanji (CJK Extension D)
+		   (#x2F800 #x2FA1F); Kanji (CJK supplement)
+		   (#x3005 #x3005); Kanji (CJK iteration mark
+		   ))))
+
+(defvar twittering-latin-accent-chars
+  (twittering-ucs-seq-to-string
+   '(303 277
+	 192 193 194 195 196 197 198 199 200 201 202 203 204 205
+	 206 207 208 209 210 211 212 213 214 216 217 218 219 220
+	 221 222 223 224 225 226 227 228 229 230 231 232 233 234
+	 235 236 237 238 239 240 241 242 243 244 245 246 248 249
+	 250 251 252 253 254)
+   ""))
+
+(defvar twittering-laten-accents
+  (concat "[" twittering-latin-accent-chars "]+"))
+
+(defvar twittering-hashtag-boundary
+  (concat
+   "\\(?:^\\|$\\|" twittering-spaces "\\|"
+   (twittering-ucs-seq-to-string
+    '(#x24 #x300c #x300d #x3002 #x3001 #x2e
+	   #x21 #xff01 #x3f #xff1f)
+    "\\|")
+   "\\)"))
+
+(defvar twittering-hashtag-alpha
+  (concat "[a-z_"
+	  twittering-latin-accent-chars
+	  twittering-non-latin-hashtag-chars
+	  "]"))
+
+(defvar twittering-hashtag-alpha-numeric
+  (concat
+   "[a-z0-9_"
+   twittering-latin-accent-chars
+   twittering-non-latin-hashtag-chars
+   "]"))
+
+(defvar twittering-auto-link-hashtags
+  (concat
+   ;; "\\(?:"
+   ;; twittering-hashtag-boundary
+   ;; "\\)"
+   twittering-regexp-hash
+   "\\(" twittering-hashtag-alpha-numeric "*"
+   twittering-hashtag-alpha
+   twittering-hashtag-alpha-numeric "*\\)"))
+
 ;;;;
 ;;;; Format of a status
 ;;;;
@@ -5757,7 +5875,10 @@ following symbols;
 	  'identity
 	  (list
 	   ;; hashtag
-	   (concat regexp-hash "\\([a-zA-Z0-9_-]+\\)")
+	   (if twittering-non-latin-hashtag
+	       twittering-auto-link-hashtags
+	     (concat regexp-hash "\\([a-zA-Z0-9_-]+\\)"))
+
 	   ;; @USER/LIST
 	   (concat regexp-atmark
 		   "\\(\\([a-zA-Z0-9_-]+\\)/\\([a-zA-Z0-9_-]+\\)\\)")
